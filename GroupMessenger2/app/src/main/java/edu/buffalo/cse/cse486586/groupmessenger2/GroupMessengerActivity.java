@@ -19,6 +19,8 @@ import android.widget.Toast;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -46,6 +48,7 @@ public class GroupMessengerActivity extends Activity {
     private Uri mUri;
     static int msgCount = 0;
 
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -59,6 +62,7 @@ public class GroupMessengerActivity extends Activity {
         TelephonyManager tel = (TelephonyManager) this.getSystemService(Context.TELEPHONY_SERVICE);
         String portStr = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
         final String myPort = String.valueOf((Integer.parseInt(portStr) * 2));
+
         mContentResolver = getContentResolver();
         mUri = buildUri("content", "edu.buffalo.cse.cse486586.groupmessenger2.provider");
         Log.v("myport", myPort);
@@ -90,11 +94,11 @@ public class GroupMessengerActivity extends Activity {
                 sendMessage.setText(""); // This is one way to reset the input box.
                 // tv.append("\t" + msg); // This is one way to display a string.
                 Log.v("send msg: ", msg);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT0);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT1);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT2);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT3);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT4);
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT0, myPort);
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT1, myPort);
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT2, myPort);
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT3, myPort);
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT4, myPort);
             }
         });
 
@@ -126,10 +130,11 @@ public class GroupMessengerActivity extends Activity {
                         Integer.parseInt(msgs[1]));
 
                 String msgToSend = msgs[0];
-                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                out.writeUTF(msgToSend);
+                MyMessage msg = new MyMessage(msgToSend, msgs[2]);
+                ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+                out.writeObject(msg);
                 out.flush();
-                // out.close();
+
                 // socket.close();
             } catch (UnknownHostException e) {
                 Log.e(TAG, "ClientTask UnknownHostException");
@@ -150,19 +155,22 @@ public class GroupMessengerActivity extends Activity {
             while (true) {
                 try {
                     socket = serverSocket.accept();
-                    DataInputStream in = new DataInputStream(socket.getInputStream());
-                    String inputMsg = in.readUTF();
+                    ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
+                    MyMessage inputObject = (MyMessage) in.readObject();
+                    String inputMsg = inputObject.from;
+
 
                     if(inputMsg == null) {
                         publishProgress("");
                         return null;
                     }
+
                     publishProgress(inputMsg);
 
                     String key = Integer.toString(msgCount);
                     mContentValue = new ContentValues();
                     mContentValue.put("key", Integer.toString(msgCount));
-                    mContentValue.put("value", inputMsg);
+                    mContentValue.put("value", inputObject.msg);
                     mContentResolver.insert(mUri, mContentValue);
                     msgCount++;
                     Log.v("recieved msg: " + key, inputMsg);
