@@ -25,6 +25,8 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 
 /**
  * GroupMessengerActivity is the main Activity for the assignment.
@@ -42,11 +44,16 @@ public class GroupMessengerActivity extends Activity {
     static final String REMOTE_PORT4 = "11124";
 
     static final int SERVER_PORT = 10000;
+    String myPort;
 
     private ContentResolver mContentResolver;
     private ContentValues mContentValue;
     private Uri mUri;
     static int msgCount = 0;
+
+    private BlockingQueue<String> hold_back = new ArrayBlockingQueue<String>(30);
+
+
 
 
     @Override
@@ -59,9 +66,10 @@ public class GroupMessengerActivity extends Activity {
          * It is just a hack that I came up with to get around the networking limitations of AVDs.
          * The explanation is provided in the PA1 spec.
          */
+
         TelephonyManager tel = (TelephonyManager) this.getSystemService(Context.TELEPHONY_SERVICE);
         String portStr = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
-        final String myPort = String.valueOf((Integer.parseInt(portStr) * 2));
+        myPort = String.valueOf((Integer.parseInt(portStr) * 2));
 
         mContentResolver = getContentResolver();
         mUri = buildUri("content", "edu.buffalo.cse.cse486586.groupmessenger2.provider");
@@ -93,12 +101,17 @@ public class GroupMessengerActivity extends Activity {
                 String msg = sendMessage.getText().toString() + "\n";
                 sendMessage.setText(""); // This is one way to reset the input box.
                 // tv.append("\t" + msg); // This is one way to display a string.
-                Log.v("send msg: ", msg);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT0, myPort);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT1, myPort);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT2, myPort);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT3, myPort);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT4, myPort);
+
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT0,
+                        myPort);
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT1,
+                        myPort);
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT2,
+                        myPort);
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT3,
+                        myPort);
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, REMOTE_PORT4,
+                        myPort);
             }
         });
 
@@ -125,12 +138,25 @@ public class GroupMessengerActivity extends Activity {
 
         @Override
         protected Void doInBackground(String... msgs) {
+            /*
+            * item
+            *
+              REMOTE_PORT0
+              Integer.toString(ID)
+              "Sequence"
+            *
+            *
+            * */
             try {
                 Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                         Integer.parseInt(msgs[1]));
 
                 String msgToSend = msgs[0];
-                MyMessage msg = new MyMessage(msgToSend, msgs[2]);
+                Log.v("send msg: ", msgToSend);
+                MyMessage msg = new MyMessage(msgToSend, myPort, msgs[2]);
+                if(msgs.length == 4 && msgs[3].equals("Sequence")) {
+                    msg.type = MyMessage.Type.Sequence;
+                }
                 ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
                 out.writeObject(msg);
                 out.flush();
@@ -156,29 +182,33 @@ public class GroupMessengerActivity extends Activity {
                 try {
                     socket = serverSocket.accept();
                     ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
-                    MyMessage inputObject = (MyMessage) in.readObject();
-                    String inputMsg = inputObject.from;
-
-
+                    MyMessage inputObject = (MyMessage) in.readObject( );
+                    String inputMsg = inputObject.msg;
                     if(inputMsg == null) {
                         publishProgress("");
                         return null;
                     }
+                    if(inputObject.type == MyMessage.Type.Common) {
+                        hold_back.put(inputMsg);
+                        publishProgress(inputMsg);
+                        if(myPort.equals("11108") && hold_back.size() == 25) {
+                            send_seq(inputMsg);
+                        }
+                        Log.v("recieved common msg: ", inputMsg + " " + inputObject.type +
+                                " " + Integer.toString(hold_back.size()));
+                    } else if(inputObject.type == MyMessage.Type.Sequence) {
+                        mContentValue = new ContentValues();
+                        mContentValue.put("key", inputObject.ID);
+                        mContentValue.put("value", inputObject.msg);
+                        mContentResolver.insert(mUri, mContentValue);
+                        Log.v("recieved seq msg: ", inputMsg + " " + inputObject.type +
+                                " " + inputObject.ID);
+                    }
 
-                    publishProgress(inputMsg);
-
-                    String key = Integer.toString(msgCount);
-                    mContentValue = new ContentValues();
-                    mContentValue.put("key", Integer.toString(msgCount));
-                    mContentValue.put("value", inputObject.msg);
-                    mContentResolver.insert(mUri, mContentValue);
-                    msgCount++;
-                    Log.v("recieved msg: " + key, inputMsg);
                 } catch (Exception e) {
                     Log.e(TAG, "ServerTask socket Exception");
                 }
             }
-
         }
 
         @Override
@@ -196,6 +226,38 @@ public class GroupMessengerActivity extends Activity {
             localTextView.append(strReceived + "\n");
             localTextView.append("\n");
             return ;
+        }
+
+        private void send_seq(String inputMsg) {
+            /*
+            *
+                public String msg;
+                public String from;
+                public String ID;
+                public Type type;
+
+            * */
+            int ID = 0;
+            while (hold_back.size() > 0) {
+                String item = hold_back.poll();
+                new ClientTask().executeOnExecutor(
+                        AsyncTask.SERIAL_EXECUTOR, item,
+                        REMOTE_PORT0, Integer.toString(ID), "Sequence");
+                new ClientTask().executeOnExecutor(
+                        AsyncTask.SERIAL_EXECUTOR, item,
+                        REMOTE_PORT1, Integer.toString(ID), "Sequence");
+                new ClientTask().executeOnExecutor(
+                        AsyncTask.SERIAL_EXECUTOR, item,
+                        REMOTE_PORT2, Integer.toString(ID), "Sequence");
+                new ClientTask().executeOnExecutor(
+                        AsyncTask.SERIAL_EXECUTOR, item,
+                        REMOTE_PORT3, Integer.toString(ID), "Sequence");
+                new ClientTask().executeOnExecutor(
+                        AsyncTask.SERIAL_EXECUTOR, item,
+                        REMOTE_PORT4, Integer.toString(ID), "Sequence");
+                ID ++;
+            }
+
         }
 
 

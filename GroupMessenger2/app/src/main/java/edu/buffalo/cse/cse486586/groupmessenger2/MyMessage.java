@@ -8,11 +8,22 @@ import java.io.Serializable;
 
 public class MyMessage implements Serializable {
     private static final long serialVersionUID = 1L;
+
+    public enum Type {
+        Common,
+        Sequence
+    }
+
     public String msg;
     public String from;
+    public String ID;
 
-    public MyMessage(String msg, String from) {
+    public Type type;
+
+    public MyMessage(String msg, String from, String ID) {
         this.msg = msg;
         this.from = from;
+        this.ID = ID;
+        this.type = Type.Common;
     }
 }
