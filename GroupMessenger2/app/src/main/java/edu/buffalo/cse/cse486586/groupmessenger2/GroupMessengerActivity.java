@@ -53,9 +53,6 @@ public class GroupMessengerActivity extends Activity {
 
     private BlockingQueue<String> hold_back = new ArrayBlockingQueue<String>(30);
 
-
-
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -191,11 +188,10 @@ public class GroupMessengerActivity extends Activity {
                     if(inputObject.type == MyMessage.Type.Common) {
                         hold_back.put(inputMsg);
                         publishProgress(inputMsg);
-                        if(myPort.equals("11108") && hold_back.size() == 25) {
+                        if(myPort.equals("11112")) {
                             send_seq(inputMsg);
                         }
-                        Log.v("recieved common msg: ", inputMsg + " " + inputObject.type +
-                                " " + Integer.toString(hold_back.size()));
+                        Log.v("recieved common msg: ", inputMsg + " " + inputObject.type);
                     } else if(inputObject.type == MyMessage.Type.Sequence) {
                         mContentValue = new ContentValues();
                         mContentValue.put("key", inputObject.ID);
@@ -237,25 +233,25 @@ public class GroupMessengerActivity extends Activity {
                 public Type type;
 
             * */
-            int ID = 0;
+
             while (hold_back.size() > 0) {
                 String item = hold_back.poll();
                 new ClientTask().executeOnExecutor(
                         AsyncTask.SERIAL_EXECUTOR, item,
-                        REMOTE_PORT0, Integer.toString(ID), "Sequence");
+                        REMOTE_PORT0, Integer.toString(msgCount), "Sequence");
                 new ClientTask().executeOnExecutor(
                         AsyncTask.SERIAL_EXECUTOR, item,
-                        REMOTE_PORT1, Integer.toString(ID), "Sequence");
+                        REMOTE_PORT1, Integer.toString(msgCount), "Sequence");
                 new ClientTask().executeOnExecutor(
                         AsyncTask.SERIAL_EXECUTOR, item,
-                        REMOTE_PORT2, Integer.toString(ID), "Sequence");
+                        REMOTE_PORT2, Integer.toString(msgCount), "Sequence");
                 new ClientTask().executeOnExecutor(
                         AsyncTask.SERIAL_EXECUTOR, item,
-                        REMOTE_PORT3, Integer.toString(ID), "Sequence");
+                        REMOTE_PORT3, Integer.toString(msgCount), "Sequence");
                 new ClientTask().executeOnExecutor(
                         AsyncTask.SERIAL_EXECUTOR, item,
-                        REMOTE_PORT4, Integer.toString(ID), "Sequence");
-                ID ++;
+                        REMOTE_PORT4, Integer.toString(msgCount), "Sequence");
+                msgCount ++;
             }
 
         }
