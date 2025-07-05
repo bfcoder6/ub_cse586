@@ -69,7 +69,7 @@ public class GroupMessengerProvider extends ContentProvider {
             fos.write(value.getBytes());
             fos.close();
         } catch (IOException e) {
-
+            Log.e("insert", "IOException" + e.getMessage());
         }
         return uri;
     }
@@ -114,10 +114,11 @@ public class GroupMessengerProvider extends ContentProvider {
             }
             fis.close();
         } catch (FileNotFoundException e) {
-
+            Log.e("query", "FileNotFoundException" + e.getMessage());
         } catch (IOException e) {
-
+            Log.e("query", "IOException" + e.getMessage());
         }
+        Log.e("key: " + selection, "value: " + value);
         resultCursor.addRow(new Object[] {selection, value});
         return resultCursor;
     }
