@@ -8,6 +8,8 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.telephony.TelephonyManager;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.Menu;
@@ -55,6 +57,7 @@ public class GroupMessengerActivity extends Activity {
     private Uri mUri;
     static int msgCount = 0;
     String sequencer = "11108";
+    final int REQUIRED_LENGTH = 32;
 
     private BlockingQueue<String> hold_back = new ArrayBlockingQueue<String>(30);
 
@@ -97,10 +100,14 @@ public class GroupMessengerActivity extends Activity {
          * and send it to other AVDs.
          */
         final EditText sendMessage = (EditText) findViewById(R.id.editText1);
+
         findViewById(R.id.button4).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 String msg = sendMessage.getText().toString() + "\n";
+                if (msg.length() > REQUIRED_LENGTH) {
+                    msg = msg.substring(0, REQUIRED_LENGTH);
+                }
                 Log.d(TAG, "input msg is : " + msg);
                 sendMessage.setText("");
                 for (int i = 0; i < REMOTE_PORTS.length; i++) {
@@ -120,8 +127,6 @@ public class GroupMessengerActivity extends Activity {
             Log.e(TAG, "Can't create a ServerSocket");
 
         }
-
-
     }
 
     @Override
@@ -138,9 +143,8 @@ public class GroupMessengerActivity extends Activity {
             try {
                 Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                         Integer.parseInt(msgs[1]));
-//                socket.setSoTimeout(2500);
-//                socket.setKeepAlive(true);
-
+                socket.setSoTimeout(2500);
+                socket.setKeepAlive(true);
                 DataOutputStream out = new DataOutputStream(socket.getOutputStream());
                 MyMessage msg = new MyMessage(msgs[0], myPort, msgs[2], "Common");
                 if(msgs.length == 4 && msgs[3].equals("Sequence")) {
@@ -151,23 +155,24 @@ public class GroupMessengerActivity extends Activity {
                 String msgToSend = msg.toString();
                 out.writeUTF(msgToSend);
                 out.flush();
-                Log.v("send msg: ", msgToSend + msgs[1]);
-                InputStream in = socket.getInputStream();
-                int data = in.read();
-                if (data == -1) {
-                    throw new IOException("Invalid message format: " + msgs[1]);
-                    // Log.d("SocketStatus", "对端已关闭 (FIN received):" + msgs[1]);
-                }
-                // throw new IOException("Invalid message format: " + msgs[1]);
+                Log.v("General send msg: ", msgToSend + msgs[1]);
+                DataInputStream in = new DataInputStream(socket.getInputStream());
+                String ack = in.readUTF();
+                Log.d("SocketStatus", "Received: " + ack);
+//                if (data == -1) {
+//                    Log.e("SocketStatus", "Socket is closed (FIN received):"
+//                            + msgs[1]);
+//                    throw new IOException("Socket is closed: " + msgs[1]);
+//                }
 //                out.close();
 //                socket.close();
             } catch (SocketTimeoutException e) {
                 Log.e(TAG, "ClientTask SocketTimeoutException on " + msgs[1]);
             } catch (StreamCorruptedException e) {
                 Log.e(TAG, "ClientTask StreamCorruptedException on " + msgs[1]);
-            } catch (IOException e) {
-                Log.e(TAG, "ClientTask socket IOException on " + msgs[1]);
-                if(msgs[1].equals("11108")) {
+            } catch (EOFException e) {
+                Log.e(TAG, "ClientTask closed by server on " + msgs[1]);
+                if(msgs[1].equals("11108") && sequencer.equals("11108")) {
                     sequencer = "11112";
                     if(myPort.equals(sequencer)) {
                         send_seq();
@@ -179,36 +184,31 @@ public class GroupMessengerActivity extends Activity {
                                 REMOTE_PORTS[i],
                                 "-1",
                                 "Switch");
+                        Log.d(TAG, "Send Switch msg: "  + REMOTE_PORTS[i]);
                     }
                 }
-
+            } catch (IOException e) {
+                Log.e(TAG, "ClientTask socket IOException on " + msgs[1] + " " +
+                        e.getMessage());
+                if(msgs[1].equals("11108") && sequencer.equals("11108")) {
+                    sequencer = "11112";
+                    if(myPort.equals(sequencer)) {
+                        send_seq();
+                    }
+                    for (int i = 0; i < REMOTE_PORTS.length; i++) {
+                        new ClientTask().executeOnExecutor(
+                                AsyncTask.SERIAL_EXECUTOR,
+                                "Switch",
+                                REMOTE_PORTS[i],
+                                "-1",
+                                "Switch");
+                        Log.d(TAG, "Send Switch msg: "  + REMOTE_PORTS[i]);
+                    }
+                }
             } catch (Exception e) {
                 Log.e(TAG, "ClientTask Exception on " + msgs[1]);
             }
             return null;
-        }
-
-        private void send_seq() {
-            /*
-            *
-                public String msg;
-                public String from;
-                public String ID;
-                public Type type;
-
-            * */
-            while (hold_back.size() > 0) {
-                String item = hold_back.poll();
-                for (int i = 0; i < REMOTE_PORTS.length; i++) {
-                    new ClientTask().executeOnExecutor(
-                            AsyncTask.SERIAL_EXECUTOR,
-                            item,
-                            REMOTE_PORTS[i],
-                            Integer.toString(msgCount),
-                            "Sequence");
-                }
-                msgCount ++;
-            }
         }
     }
 
@@ -240,7 +240,7 @@ public class GroupMessengerActivity extends Activity {
                             send_seq();
                         }
                         Log.v("recieved common msg: ", inputMsg + " " + inputObject.type +
-                                " " + Integer.toString(hold_back.size()));
+                                " " + inputObject.ID);
                     } else if(inputObject.type == MyMessage.Type.Sequence) {
                         mContentValue = new ContentValues();
                         mContentValue.put("key", inputObject.ID);
@@ -253,7 +253,7 @@ public class GroupMessengerActivity extends Activity {
                         if(myPort.equals(sequencer)) {
                             send_seq();
                         }
-                        Log.v(TAG, "recieved Switch");
+                        Log.d(TAG, "recieved Switch");
                     }
                     client.close();
                 } catch (IOException e) {
@@ -263,29 +263,6 @@ public class GroupMessengerActivity extends Activity {
                 }
             }
             // return null;
-        }
-
-        private void send_seq() {
-            /*
-            *
-                public String msg;
-                public String from;
-                public String ID;
-                public Type type;
-
-            * */
-            while (hold_back.size() > 0) {
-                String item = hold_back.poll();
-                for (int i = 0; i < REMOTE_PORTS.length; i++) {
-                    new ClientTask().executeOnExecutor(
-                            AsyncTask.SERIAL_EXECUTOR,
-                            item,
-                            REMOTE_PORTS[i],
-                            Integer.toString(msgCount),
-                            "Sequence");
-                }
-                msgCount ++;
-            }
         }
 
         @Override
@@ -303,6 +280,31 @@ public class GroupMessengerActivity extends Activity {
             localTextView.append(strReceived + "\n");
             localTextView.append("\n");
             return ;
+        }
+    }
+
+    private synchronized void send_seq() {
+            /*
+            *
+                public String msg;
+                public String from;
+                public String ID;
+                public Type type;
+
+            * */
+        while (hold_back.size() > 0) {
+            String item = hold_back.poll();
+            for (int i = 0; i < REMOTE_PORTS.length; i++) {
+                new ClientTask().executeOnExecutor(
+                        AsyncTask.SERIAL_EXECUTOR,
+                        item,
+                        REMOTE_PORTS[i],
+                        Integer.toString(msgCount),
+                        "Sequence");
+                Log.d("send seq msg: ",  item + " " + REMOTE_PORTS[i] + " " +
+                        Integer.toString(msgCount));
+            }
+            msgCount ++;
         }
     }
 
