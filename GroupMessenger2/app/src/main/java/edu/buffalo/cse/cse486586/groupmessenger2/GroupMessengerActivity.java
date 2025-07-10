@@ -105,9 +105,6 @@ public class GroupMessengerActivity extends Activity {
             @Override
             public void onClick(View v) {
                 String msg = sendMessage.getText().toString() + "\n";
-                if (msg.length() > REQUIRED_LENGTH) {
-                    msg = msg.substring(0, REQUIRED_LENGTH);
-                }
                 Log.d(TAG, "input msg is : " + msg);
                 sendMessage.setText("");
                 for (int i = 0; i < REMOTE_PORTS.length; i++) {
@@ -172,43 +169,33 @@ public class GroupMessengerActivity extends Activity {
                 Log.e(TAG, "ClientTask StreamCorruptedException on " + msgs[1]);
             } catch (EOFException e) {
                 Log.e(TAG, "ClientTask closed by server on " + msgs[1]);
-                if(msgs[1].equals("11108") && sequencer.equals("11108")) {
-                    sequencer = "11112";
-                    if(myPort.equals(sequencer)) {
-                        send_seq();
-                    }
-                    for (int i = 0; i < REMOTE_PORTS.length; i++) {
-                        new ClientTask().executeOnExecutor(
-                                AsyncTask.SERIAL_EXECUTOR,
-                                "Switch",
-                                REMOTE_PORTS[i],
-                                "-1",
-                                "Switch");
-                        Log.d(TAG, "Send Switch msg: "  + REMOTE_PORTS[i]);
-                    }
-                }
+                switch_sequencer(msgs);
             } catch (IOException e) {
                 Log.e(TAG, "ClientTask socket IOException on " + msgs[1] + " " +
                         e.getMessage());
-                if(msgs[1].equals("11108") && sequencer.equals("11108")) {
-                    sequencer = "11112";
-                    if(myPort.equals(sequencer)) {
-                        send_seq();
-                    }
-                    for (int i = 0; i < REMOTE_PORTS.length; i++) {
-                        new ClientTask().executeOnExecutor(
-                                AsyncTask.SERIAL_EXECUTOR,
-                                "Switch",
-                                REMOTE_PORTS[i],
-                                "-1",
-                                "Switch");
-                        Log.d(TAG, "Send Switch msg: "  + REMOTE_PORTS[i]);
-                    }
-                }
+                switch_sequencer(msgs);
             } catch (Exception e) {
                 Log.e(TAG, "ClientTask Exception on " + msgs[1]);
             }
             return null;
+        }
+
+        private void switch_sequencer(String... msgs) {
+            if(msgs[1].equals("11108") && sequencer.equals("11108")) {
+                sequencer = "11112";
+                if(myPort.equals(sequencer)) {
+                    send_seq();
+                }
+                for (int i = 0; i < REMOTE_PORTS.length; i++) {
+                    new ClientTask().executeOnExecutor(
+                            AsyncTask.SERIAL_EXECUTOR,
+                            "Switch",
+                            REMOTE_PORTS[i],
+                            "-1",
+                            "Switch");
+                    Log.d(TAG, "Send Switch msg: "  + REMOTE_PORTS[i]);
+                }
+            }
         }
     }
 
