@@ -105,9 +105,9 @@ public class GroupMessengerActivity extends Activity {
             @Override
             public void onClick(View v) {
                 String msg = sendMessage.getText().toString() + "\n";
-                Log.d(TAG, "input msg is : " + msg);
+                Log.i(TAG, "input msg is : " + msg);
                 sendMessage.setText("");
-                for (int i = 0; i < REMOTE_PORTS.length; i++) {
+                for (int i = REMOTE_PORTS.length - 1; i >= 0 ; i--) {
                     new ClientTask().executeOnExecutor(
                             AsyncTask.SERIAL_EXECUTOR,
                             msg,
