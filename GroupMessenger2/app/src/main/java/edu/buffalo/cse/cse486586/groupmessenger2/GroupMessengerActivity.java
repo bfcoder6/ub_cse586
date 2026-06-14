@@ -8,6 +8,8 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.telephony.TelephonyManager;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.Menu;
@@ -46,17 +48,11 @@ public class GroupMessengerActivity extends Activity {
 
     static final String TAG = GroupMessengerActivity.class.getSimpleName();
     static final String[] REMOTE_PORTS = {"11108", "11112", "11116", "11120", "11124"};
-
     static final int SERVER_PORT = 10000;
-    String myPort;
-
+    static String myPort;
     private ContentResolver mContentResolver;
-    private ContentValues mContentValue;
     private Uri mUri;
-    static int msgCount = 0;
-    String sequencer = "11108";
-
-    private BlockingQueue<String> hold_back = new ArrayBlockingQueue<String>(30);
+    static SequencerHelper helper = new SequencerHelper();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,18 +93,20 @@ public class GroupMessengerActivity extends Activity {
          * and send it to other AVDs.
          */
         final EditText sendMessage = (EditText) findViewById(R.id.editText1);
+
         findViewById(R.id.button4).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 String msg = sendMessage.getText().toString() + "\n";
-                Log.d(TAG, "input msg is : " + msg);
+                Log.i(TAG, "input msg is : " + msg);
                 sendMessage.setText("");
-                for (int i = 0; i < REMOTE_PORTS.length; i++) {
+                for (int i = REMOTE_PORTS.length - 1; i >= 0 ; i--) {
                     new ClientTask().executeOnExecutor(
                             AsyncTask.SERIAL_EXECUTOR,
                             msg,
                             REMOTE_PORTS[i],
-                            myPort);
+                            myPort,
+                            "Common");
                 }
             }
         });
@@ -120,8 +118,6 @@ public class GroupMessengerActivity extends Activity {
             Log.e(TAG, "Can't create a ServerSocket");
 
         }
-
-
     }
 
     @Override
@@ -131,7 +127,7 @@ public class GroupMessengerActivity extends Activity {
         return true;
     }
 
-    private class ClientTask extends AsyncTask<String, Void, Void> {
+    public static class ClientTask extends AsyncTask<String, Void, Void> {
 
         @Override
         protected Void doInBackground(String... msgs) {
@@ -139,81 +135,37 @@ public class GroupMessengerActivity extends Activity {
                 Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                         Integer.parseInt(msgs[1]));
                 socket.setSoTimeout(2500);
-//                socket.setKeepAlive(true);
-
+                socket.setKeepAlive(true);
                 DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-                MyMessage msg = new MyMessage(msgs[0], myPort, msgs[2], "Common");
-                if(msgs.length == 4 && msgs[3].equals("Sequence")) {
-                    msg.type = MyMessage.Type.Sequence;
-                } else if (msgs.length == 4 && msgs[3].equals("Switch")) {
-                    msg.type = MyMessage.Type.Switch;
-                }
+                MyMessage msg = new MyMessage(msgs[0], myPort, msgs[2], msgs[3]);
                 String msgToSend = msg.toString();
                 out.writeUTF(msgToSend);
                 out.flush();
-                Log.v("send msg: ", msgToSend + msgs[1]);
-//                InputStream in = socket.getInputStream();
-//                int data = in.read();
-//                if (data == -1) {
-//                    throw new IOException("Invalid message format: " + msgs[1]);
-//                    // Log.d("SocketStatus", "对端已关闭 (FIN received):" + msgs[1]);
-//                }
+                Log.v("General send msg: ", msgToSend + msgs[1]);
+                DataInputStream in = new DataInputStream(socket.getInputStream());
+                String ack = in.readUTF();
+                Log.d("SocketStatus", "Received: " + ack);
 //                out.close();
 //                socket.close();
             } catch (SocketTimeoutException e) {
                 Log.e(TAG, "ClientTask SocketTimeoutException on " + msgs[1]);
             } catch (StreamCorruptedException e) {
                 Log.e(TAG, "ClientTask StreamCorruptedException on " + msgs[1]);
+            } catch (EOFException e) {
+                Log.e(TAG, "ClientTask closed by server on " + msgs[1]);
+                helper.switch_sequencer(msgs[1], myPort);
             } catch (IOException e) {
-                Log.e(TAG, "ClientTask socket IOException on " + msgs[1]);
-                if(msgs[1].equals("11108")) {
-                    sequencer = "11112";
-                    if(myPort.equals(sequencer)) {
-                        send_seq();
-                    }
-                    for (int i = 0; i < REMOTE_PORTS.length; i++) {
-                        new ClientTask().executeOnExecutor(
-                                AsyncTask.SERIAL_EXECUTOR,
-                                "Switch",
-                                REMOTE_PORTS[i],
-                                "-1",
-                                "Switch");
-                    }
-                }
-
+                Log.e(TAG, "ClientTask socket IOException on " + msgs[1] + " " +
+                        e.getMessage());
+                helper.switch_sequencer(msgs[1], myPort);
             } catch (Exception e) {
                 Log.e(TAG, "ClientTask Exception on " + msgs[1]);
             }
             return null;
         }
-
-        private void send_seq() {
-            /*
-            *
-                public String msg;
-                public String from;
-                public String ID;
-                public Type type;
-
-            * */
-            while (hold_back.size() > 0) {
-                String item = hold_back.poll();
-                for (int i = 0; i < REMOTE_PORTS.length; i++) {
-                    new ClientTask().executeOnExecutor(
-                            AsyncTask.SERIAL_EXECUTOR,
-                            item,
-                            REMOTE_PORTS[i],
-                            Integer.toString(msgCount),
-                            "Sequence");
-                }
-                msgCount ++;
-            }
-        }
     }
 
-
     private class ServerTask extends AsyncTask<ServerSocket, String, Void> {
-
 
         @Override
         protected Void doInBackground(ServerSocket... sockets) {
@@ -231,59 +183,14 @@ public class GroupMessengerActivity extends Activity {
                         return null;
                     }
                     MyMessage inputObject = MyMessage.parse(msg);
-                    String inputMsg = inputObject.msg;
-                    if(inputObject.type == MyMessage.Type.Common) {
-                        hold_back.put(inputMsg);
-                        publishProgress(inputMsg);
-                        if(myPort.equals(sequencer)) {
-                            send_seq();
-                        }
-                        Log.v("recieved common msg: ", inputMsg + " " + inputObject.type +
-                                " " + Integer.toString(hold_back.size()));
-                    } else if(inputObject.type == MyMessage.Type.Sequence) {
-                        mContentValue = new ContentValues();
-                        mContentValue.put("key", inputObject.ID);
-                        mContentValue.put("value", inputObject.msg);
-                        mContentResolver.insert(mUri, mContentValue);
-                        Log.v("recieved seq msg: ", inputMsg + " " + inputObject.type +
-                                " " + inputObject.ID);
-                    } else if(inputObject.type == MyMessage.Type.Switch) {
-                        sequencer = "11112";
-                        if(myPort.equals(sequencer)) {
-                            send_seq();
-                        }
-                        Log.v(TAG, "recieved Switch");
-                    }
+                    helper.sequencerHelper(inputObject, mUri, myPort, mContentResolver);
+                    publishProgress(inputObject.msg);
                     client.close();
                 } catch (IOException e) {
                     Log.e(TAG, "ServerTask socket IOException" + e.getMessage());
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-            }
-            // return null;
-        }
-
-        private void send_seq() {
-            /*
-            *
-                public String msg;
-                public String from;
-                public String ID;
-                public Type type;
-
-            * */
-            while (hold_back.size() > 0) {
-                String item = hold_back.poll();
-                for (int i = 0; i < REMOTE_PORTS.length; i++) {
-                    new ClientTask().executeOnExecutor(
-                            AsyncTask.SERIAL_EXECUTOR,
-                            item,
-                            REMOTE_PORTS[i],
-                            Integer.toString(msgCount),
-                            "Sequence");
-                }
-                msgCount ++;
             }
         }
 
@@ -304,7 +211,6 @@ public class GroupMessengerActivity extends Activity {
             return ;
         }
     }
-
 
     private Uri buildUri(String scheme, String authority) {
         Uri.Builder uriBuilder = new Uri.Builder();

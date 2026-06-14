@@ -58,7 +58,7 @@ public class GroupMessengerProvider extends ContentProvider {
          * internal storage option that we used in PA1. If you want to use that option, please
          * take a look at the code for PA1.
          */
-        Log.v("insert", values.toString());
+
         String key = values.getAsString("key");
         String value = values.getAsString("value");
 
@@ -68,8 +68,9 @@ public class GroupMessengerProvider extends ContentProvider {
             fos = context.openFileOutput(key, Context.MODE_PRIVATE);
             fos.write(value.getBytes());
             fos.close();
+            Log.v("insert to provider", key + " " + value);
         } catch (IOException e) {
-            Log.e("insert", "IOException" + e.getMessage());
+            Log.e("insert to file", "IOException" + e.getMessage());
         }
         return uri;
     }
@@ -113,12 +114,12 @@ public class GroupMessengerProvider extends ContentProvider {
                 value.append((char) c);
             }
             fis.close();
+            Log.d("query success: ", selection + " " + value);
         } catch (FileNotFoundException e) {
             Log.e("query", "FileNotFoundException" + e.getMessage());
         } catch (IOException e) {
             Log.e("query", "IOException" + e.getMessage());
         }
-        Log.e("key: " + selection, "value: " + value);
         resultCursor.addRow(new Object[] {selection, value});
         return resultCursor;
     }
