@@ -138,7 +138,7 @@ public class GroupMessengerActivity extends Activity {
             try {
                 Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                         Integer.parseInt(msgs[1]));
-//                socket.setSoTimeout(2500);
+                socket.setSoTimeout(2500);
 //                socket.setKeepAlive(true);
 
                 DataOutputStream out = new DataOutputStream(socket.getOutputStream());
@@ -152,13 +152,12 @@ public class GroupMessengerActivity extends Activity {
                 out.writeUTF(msgToSend);
                 out.flush();
                 Log.v("send msg: ", msgToSend + msgs[1]);
-                InputStream in = socket.getInputStream();
-                int data = in.read();
-                if (data == -1) {
-                    throw new IOException("Invalid message format: " + msgs[1]);
-                    // Log.d("SocketStatus", "对端已关闭 (FIN received):" + msgs[1]);
-                }
-                // throw new IOException("Invalid message format: " + msgs[1]);
+//                InputStream in = socket.getInputStream();
+//                int data = in.read();
+//                if (data == -1) {
+//                    throw new IOException("Invalid message format: " + msgs[1]);
+//                    // Log.d("SocketStatus", "对端已关闭 (FIN received):" + msgs[1]);
+//                }
 //                out.close();
 //                socket.close();
             } catch (SocketTimeoutException e) {
